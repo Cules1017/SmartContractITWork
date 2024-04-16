@@ -11,7 +11,7 @@ contract SmartContract {
         uint256 jobIdcurent;
         uint256 clientId;
         uint256 freelancerId;
-        uint8 status; //0: đã tạo(chưa kí),1:client đã chuyển tiề,2:freelancer đã ký 3:freelancer báo đã hoàn thành,4:client xác nhận
+        uint8 status; //0: đã tạo đã chuyển tiề,1:freelancer đã ký 2:freelancer báo đã hoàn thành,3:client xác nhận
         address client;
         address freelancer;
         bool canceled; // True nếu hợp đồng đã bị hủy
@@ -50,7 +50,7 @@ contract SmartContract {
 
     modifier contractNotAccepted(uint256 id) {
         // check hợp đồng chấp thuận chưa
-        require(jobs[id].status < 2, "Contract is already accepted");
+        require(jobs[id].status < 1, "Contract is already accepted");
         _;
     }
 
@@ -100,23 +100,18 @@ contract SmartContract {
     function acceptContract(
         uint256 id,string memory signature
     ) external contractNotCanceled(id) contractNotAccepted(id) {
-        jobs[id].status = 2; // gán giá trị status=2 client chấp thuận
+        jobs[id].status = 1; // gán giá trị status=2 client chấp thuận
         jobs[id].signatureF=signature;
         jobs[id].freelancer = msg.sender; // Gán địa chỉ của freelancer
     }
 
-    // Khi không có ai apply thì báo hủy hợp đồng
-    function cancelContract(
-        uint256 id
-    ) external onlyClient(id) contractNotCanceled(id) contractNotAccepted(id) {
-        payable(jobs[id].client).transfer(jobs[id].bids);
-        jobs[id].canceled = true;
-    }
+
 
     // contract hoàn thành chỉ client đc thực hiện
     function finalizeContract(uint256 id) external onlyClient(id) {
         // check trạng thái của freelancer
-        require(jobs[id].status == 3, "Contract is not finalized yet");
+        require(jobs[id].status == 2, "Contract is not finalized yet");
+        jobs[id].status = 3;
         payable(jobs[id].freelancer).transfer(jobs[id].bids); // chuyển tiền sang freelancer
     }
 
@@ -147,8 +142,8 @@ contract SmartContract {
 
     // freelancer báo hoàn thành
     function reportCompletion(uint256 id) external onlyFreelancer(id) {
-        require(jobs[id].status == 2, "Contract is not accepted yet");
-        jobs[id].status = 3;
+        require(jobs[id].status == 1, "Contract is not accepted yet");
+        jobs[id].status = 2;
     }
 
     event BalanceBefore(uint256 balance);
