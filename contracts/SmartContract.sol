@@ -5,19 +5,19 @@ contract SmartContract {
     struct Job {
         string title;
         string description;
-        string signatureC;//chữ kí của clients
-        string signatureF;//chỮ KÍ của Freelancers
+        string signatureC; //chữ kí của clients
+        string signatureF; //chỮ KÍ của Freelancers
         uint256 bids;
         uint256 jobIdcurent;
         uint256 clientId;
         uint256 freelancerId;
-        uint8 status; 
+        uint8 status;
         //trạng thái status
         //0: đã tạo,1:freelancer đã ký 2:freelancer báo đã hoàn thành,3:client xác nhận(Hợp đồng kết thúc),
         //4:(bị hủy do freelancer),5:(bị hủy do client)
         address client;
         address freelancer;
-        string cancelReason;// lí do hủy
+        string cancelReason; // lí do hủy
     }
     mapping(uint256 => Job) public jobs;
     uint256 public jobId;
@@ -80,7 +80,7 @@ contract SmartContract {
 
     modifier contractNotCanceled(uint256 id) {
         //Valuda nếu hợp đồng đã Hủy thì kh đc hủy
-        require(jobs[id].status<4, "Contract is canceled");
+        require(jobs[id].status < 4, "Contract is canceled");
         _;
     }
 
@@ -94,7 +94,9 @@ contract SmartContract {
         //lấy thông tin tiền trong ví trung gian
         return address(escrow).balance;
     }
+
     event JobCreated(uint256 indexed jobId); // Sự kiện trả về job ID
+
     function createContract(
         string memory _title,
         string memory _description,
@@ -115,72 +117,89 @@ contract SmartContract {
             description: _description,
             bids: _bids,
             status: 0,
-            signatureC:_signature,
-            signatureF:'',
+            signatureC: _signature,
+            signatureF: "",
             jobIdcurent: _jobId,
             clientId: _clientId,
             freelancerId: _freelancerId,
             client: msg.sender,
             freelancer: address(0),
-            cancelReason:''
+            cancelReason: ""
         });
         // Phát sinh sự kiện trả về job ID
         emit JobCreated(jobId - 1);
         // Nạp số tiền vào ví trung gian
-        escrow.transfer(_bids);
-        
+        //escrow.transfer(_bids);
+
         return jobId - 1; //return về id hợp đồng
     }
 
     //check điều kiện[contract kh bị hủy, contract chưa đc accept
-    function acceptContract(
-        uint256 id,string memory signature
-    ) external contractNotCanceled(id) contractNotAccepted(id) {
+    function acceptContract(uint256 id, string memory signature)
+        external
+        contractNotCanceled(id)
+        contractNotAccepted(id)
+    {
         require(
             msg.sender != jobs[id].client,
             "Client can't accept this contract"
         );
         jobs[id].status = 1; // gán giá trị status=1 client chấp thuận
-        jobs[id].signatureF=signature;
+        jobs[id].signatureF = signature;
         jobs[id].freelancer = msg.sender; // Gán địa chỉ của freelancer
     }
 
-
+    ///kiểm tra giúp tôi hàm bên dưới
+    /// write funtion finalizeContract and pay from escrows to freelancer
 
     // contract hoàn thành chỉ client đc thực hiện
     function finalizeContract(uint256 id) external onlyClient(id) {
-    require(jobs[id].status == 2, "Contract is not finalized yet");
-    jobs[id].status = 3;
+        require(jobs[id].status == 2, "Contract is not finalized yet");
+        jobs[id].status = 3;
 
-    // Kiểm tra số dư của hợp đồng trước khi chuyển tiền
-    uint256 contractBalance = address(this).balance;
-    require(contractBalance >= jobs[id].bids, "Contract balance is insufficient");
+        // Kiểm tra số dư của hợp đồng trước khi chuyển tiền
+        //uint256 contractBalance = address(this).balance;
+        //require(contractBalance >= jobs[id].bids/1000000000000000000, "Contract balance is insufficient");
 
-    // Chuyển tiền sang tài khoản của freelancer
-    payable(jobs[id].freelancer).transfer(jobs[id].bids);
-}
-
-    
-    function getJobInfoByCurrentJobId(uint256 currentJobId) external view returns ( uint256, string memory, string memory, string memory, string memory, uint256, uint8, address, address) {
-    for (uint256 i = 0; i < jobId; i++) {
-        if (jobs[i].jobIdcurent == currentJobId&&jobs[i].status<=3) {
-            return (
-                i,
-                jobs[i].title,
-                jobs[i].description,
-                jobs[i].signatureF,
-                jobs[i].signatureC,
-                jobs[i].bids,
-                jobs[i].status,
-                jobs[i].client,
-                jobs[i].freelancer
-            );
-        }
+        // Chuyển tiền sang tài khoản của freelancer
+        // send all Ether to owner
+        // (bool success,) = jobs[id].freelancer.call{value: jobs[id].bids}("");
+        // require(success, "Failed to send Ether");
+        payable(jobs[id].freelancer).transfer(jobs[id].bids);
     }
-    revert("Job not found or canceled");
-}
 
-   
+    function getJobInfoByCurrentJobId(uint256 currentJobId)
+        external
+        view
+        returns (
+            uint256,
+            string memory,
+            string memory,
+            string memory,
+            string memory,
+            uint256,
+            uint8,
+            address,
+            address
+        )
+    {
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].jobIdcurent == currentJobId && jobs[i].status <= 3) {
+                return (
+                    i,
+                    jobs[i].title,
+                    jobs[i].description,
+                    jobs[i].signatureF,
+                    jobs[i].signatureC,
+                    jobs[i].bids,
+                    jobs[i].status,
+                    jobs[i].client,
+                    jobs[i].freelancer
+                );
+            }
+        }
+        revert("Job not found or canceled");
+    }
 
     function cancelContract(uint256 id, string memory reason) external {
         require(
@@ -192,14 +211,20 @@ contract SmartContract {
 
         if (msg.sender == jobs[id].client) {
             // Nếu client hủy hợp đồng
-            require(jobs[id].status < 3, "Contract cannot be canceled by client at this stage");
+            require(
+                jobs[id].status < 3,
+                "Contract cannot be canceled by client at this stage"
+            );
 
             jobs[id].status = 5; // Cập nhật trạng thái hủy bởi client
             jobs[id].cancelReason = reason; // Lưu lí do hủy
             payable(jobs[id].freelancer).transfer(jobs[id].bids); // Chuyển tiền về cho freelancer
         } else {
             // Nếu freelancer hủy hợp đồng
-            require(jobs[id].status < 2, "Contract cannot be canceled by freelancer at this stage");
+            require(
+                jobs[id].status < 2,
+                "Contract cannot be canceled by freelancer at this stage"
+            );
 
             jobs[id].status = 4; // Cập nhật trạng thái hủy bởi freelancer
             jobs[id].cancelReason = reason; // Lưu lí do hủy
@@ -207,12 +232,131 @@ contract SmartContract {
         }
     }
 
-
-
     // freelancer báo hoàn thành
     function reportCompletion(uint256 id) external onlyFreelancer(id) {
         require(jobs[id].status == 1, "Contract is not accepted yet");
         jobs[id].status = 2;
+    }
+
+    function getContractsByAddress(address userAddress)
+        external
+        view
+        returns (uint256[] memory)
+    {
+        uint256 count = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (
+                jobs[i].client == userAddress ||
+                jobs[i].freelancer == userAddress
+            ) {
+                count++;
+            }
+        }
+
+        uint256[] memory userContracts = new uint256[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (
+                jobs[i].client == userAddress ||
+                jobs[i].freelancer == userAddress
+            ) {
+                userContracts[index] = i;
+                index++;
+            }
+        }
+        return userContracts;
+    }
+
+    function getContractsByClientId(uint256 clientId)
+        external
+        view
+        returns (uint256[] memory)
+    {
+        uint256 count = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].clientId == clientId) {
+                count++;
+            }
+        }
+
+        uint256[] memory clientContracts = new uint256[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].clientId == clientId) {
+                clientContracts[index] = i;
+                index++;
+            }
+        }
+        return clientContracts;
+    }
+
+    function getContractsByFreelancerId(uint256 freelancerId)
+        external
+        view
+        returns (uint256[] memory)
+    {
+        uint256 count = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].freelancerId == freelancerId) {
+                count++;
+            }
+        }
+
+        uint256[] memory freelancerContracts = new uint256[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].freelancerId == freelancerId) {
+                freelancerContracts[index] = i;
+                index++;
+            }
+        }
+        return freelancerContracts;
+    }
+
+    function getContractsByClientAddress(address clientAddress)
+        external
+        view
+        returns (uint256[] memory)
+    {
+        uint256 count = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].client == clientAddress) {
+                count++;
+            }
+        }
+
+        uint256[] memory clientContracts = new uint256[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].client == clientAddress) {
+                clientContracts[index] = i;
+                index++;
+            }
+        }
+        return clientContracts;
+    }
+
+    function getContractsByFreelancerAddress(address freelancerAddress)
+        external
+        view
+        returns (uint256[] memory)
+    {
+        uint256 count = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].freelancer == freelancerAddress) {
+                count++;
+            }
+        }
+
+        uint256[] memory freelancerContracts = new uint256[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].freelancer == freelancerAddress) {
+                freelancerContracts[index] = i;
+                index++;
+            }
+        }
+        return freelancerContracts;
     }
 
     event BalanceBefore(uint256 balance);
