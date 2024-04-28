@@ -6,19 +6,55 @@ contract SmartContract {
         string title;
         string description;
         string signatureC;//chữ kí của clients
-       string signatureF;//chỮ KÍ của Freelancers
+        string signatureF;//chỮ KÍ của Freelancers
         uint256 bids;
         uint256 jobIdcurent;
         uint256 clientId;
         uint256 freelancerId;
-        uint8 status; //0: đã tạo đã chuyển tiề,1:freelancer đã ký 2:freelancer báo đã hoàn thành,3:client xác nhận
+        uint8 status; 
+        //trạng thái status
+        //0: đã tạo,1:freelancer đã ký 2:freelancer báo đã hoàn thành,3:client xác nhận(Hợp đồng kết thúc),
+        //4:(bị hủy do freelancer),5:(bị hủy do client)
         address client;
         address freelancer;
-        bool canceled; // True nếu hợp đồng đã bị hủy
+        string cancelReason;// lí do hủy
     }
     mapping(uint256 => Job) public jobs;
     uint256 public jobId;
     address payable public escrow;
+
+    /*
+    + Hàm tạo hợp đồng
+       - Chỉ có client mới được tạo
+       - Truyền vào thông tin cần thiết( + lưu hình ảnh chữ kí base64,
+                                         + lúc này client nạp tiền luôn,
+                                         + bids fe không cho nhập mà phải truyền từ job)
+       - số ví client sẽ được lưu lại/số ví freelancer để trống
+    + Hàm ký hợp đồng
+       - validate:Check ví người kí!= ví người tạo,check trạng thái hợp đồng
+       - Lưu xuống status
+       - chữ kí
+    + Hàm hủy dành cho freelancer
+       - validate:Check ví ==ví freelancer,check trạng thái hợp đồng(chưa bị hủy và đã được tạo)
+       - Lưu xuống lí do hủy, chỉnh lại status
+       - Hoàn tiền về cho client
+    + Hàm hủy dành cho client
+       - validate:Check ví ==ví client,check trạng thái hợp đồng(chưa bị hủy và đã được tạo, chưa được client xác nhận final)
+       - Lưu xuống lí do hủy, chỉnh lại status
+       - Hoàn tiền về cho freelancer
+    + Hàm báo hoàn thành dành cho freelancer
+       - validate:Check ví ==ví freelancer,check trạng thái hợp đồng(đã kí)
+       - chỉnh lại status
+    + Hàm báo kết thúc hợp đồng dành cho client
+       - validate:Check ví ==ví client,check trạng thái hợp đồng(đã đc freelancer xác nhận)
+       - chỉnh lại status
+       - báo hợp đồng thành công
+    ================== NHỮNG HÀM READ ====================
+    + Lấy thông tin hợp đồng theo JOBID
+    + Lấy thông tin tất cả hợp đồng theo ví
+    + Lấy tất cả hợp đồng theo JOB
+    =======================================================
+    */
 
     constructor() {
         escrow = payable(msg.sender);
@@ -44,7 +80,7 @@ contract SmartContract {
 
     modifier contractNotCanceled(uint256 id) {
         //Valuda nếu hợp đồng đã Hủy thì kh đc hủy
-        require(!jobs[id].canceled, "Contract is canceled");
+        require(jobs[id].status<4, "Contract is canceled");
         _;
     }
 
@@ -86,7 +122,7 @@ contract SmartContract {
             freelancerId: _freelancerId,
             client: msg.sender,
             freelancer: address(0),
-            canceled: false // Thêm trường canceled vào constructor
+            cancelReason:''
         });
         // Phát sinh sự kiện trả về job ID
         emit JobCreated(jobId - 1);
@@ -96,11 +132,15 @@ contract SmartContract {
         return jobId - 1; //return về id hợp đồng
     }
 
-    //check điều kiện[contract kh bị hủy, contract chưa đc accept]
+    //check điều kiện[contract kh bị hủy, contract chưa đc accept
     function acceptContract(
         uint256 id,string memory signature
     ) external contractNotCanceled(id) contractNotAccepted(id) {
-        jobs[id].status = 1; // gán giá trị status=2 client chấp thuận
+        require(
+            msg.sender != jobs[id].client,
+            "Client can't accept this contract"
+        );
+        jobs[id].status = 1; // gán giá trị status=1 client chấp thuận
         jobs[id].signatureF=signature;
         jobs[id].freelancer = msg.sender; // Gán địa chỉ của freelancer
     }
@@ -109,16 +149,21 @@ contract SmartContract {
 
     // contract hoàn thành chỉ client đc thực hiện
     function finalizeContract(uint256 id) external onlyClient(id) {
-        // check trạng thái của freelancer
-        require(jobs[id].status == 2, "Contract is not finalized yet");
-        jobs[id].status = 3;
-        payable(jobs[id].freelancer).transfer(jobs[id].bids); // chuyển tiền sang freelancer
-    }
+    require(jobs[id].status == 2, "Contract is not finalized yet");
+    jobs[id].status = 3;
+
+    // Kiểm tra số dư của hợp đồng trước khi chuyển tiền
+    uint256 contractBalance = address(this).balance;
+    require(contractBalance >= jobs[id].bids, "Contract balance is insufficient");
+
+    // Chuyển tiền sang tài khoản của freelancer
+    payable(jobs[id].freelancer).transfer(jobs[id].bids);
+}
 
     
     function getJobInfoByCurrentJobId(uint256 currentJobId) external view returns ( uint256, string memory, string memory, string memory, string memory, uint256, uint8, address, address) {
     for (uint256 i = 0; i < jobId; i++) {
-        if (jobs[i].jobIdcurent == currentJobId&&!jobs[i].canceled) {
+        if (jobs[i].jobIdcurent == currentJobId&&jobs[i].status<=3) {
             return (
                 i,
                 jobs[i].title,
@@ -137,6 +182,30 @@ contract SmartContract {
 
    
 
+    function cancelContract(uint256 id, string memory reason) external {
+        require(
+            msg.sender == jobs[id].client || msg.sender == jobs[id].freelancer,
+            "Only client or freelancer can cancel this contract"
+        );
+
+        require(jobs[id].status < 4, "Contract cannot be canceled");
+
+        if (msg.sender == jobs[id].client) {
+            // Nếu client hủy hợp đồng
+            require(jobs[id].status < 3, "Contract cannot be canceled by client at this stage");
+
+            jobs[id].status = 5; // Cập nhật trạng thái hủy bởi client
+            jobs[id].cancelReason = reason; // Lưu lí do hủy
+            payable(jobs[id].freelancer).transfer(jobs[id].bids); // Chuyển tiền về cho freelancer
+        } else {
+            // Nếu freelancer hủy hợp đồng
+            require(jobs[id].status < 2, "Contract cannot be canceled by freelancer at this stage");
+
+            jobs[id].status = 4; // Cập nhật trạng thái hủy bởi freelancer
+            jobs[id].cancelReason = reason; // Lưu lí do hủy
+            payable(jobs[id].client).transfer(jobs[id].bids); // Chuyển tiền về cho client
+        }
+    }
 
 
 
