@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
+struct ContractInfo {
+    uint256 id;
+    string title;
+    uint8 status;
+}
+
 contract SmartContract {
     struct Job {
         string title;
@@ -21,7 +27,6 @@ contract SmartContract {
     }
     mapping(uint256 => Job) public jobs;
     uint256 public jobId;
-    address payable public escrow;
 
     /*
     + Hàm tạo hợp đồng
@@ -56,9 +61,7 @@ contract SmartContract {
     =======================================================
     */
 
-    constructor() {
-        escrow = payable(msg.sender);
-    }
+    constructor() {}
 
     modifier onlyClient(uint256 id) {
         // validate chỉ có client mới thực hiện dc thao tác này
@@ -90,11 +93,6 @@ contract SmartContract {
         _;
     }
 
-    function getBalance() public view returns (uint256) {
-        //lấy thông tin tiền trong ví trung gian
-        return address(escrow).balance;
-    }
-
     event JobCreated(uint256 indexed jobId); // Sự kiện trả về job ID
 
     function createContract(
@@ -109,8 +107,6 @@ contract SmartContract {
         require(msg.value == _bids, "Insufficient amount sent");
         //số  tiền gởi phải bằng với số tiền thầu dự án trong hợp đồng
         emit Ok();
-        uint256 balanceBefore = getBalance();
-        emit BalanceBefore(balanceBefore);
         jobId++;
         jobs[jobId - 1] = Job({
             title: _title,
@@ -201,6 +197,42 @@ contract SmartContract {
         revert("Job not found or canceled");
     }
 
+    function getContractById(uint256 id) external view returns (Job memory) {
+        require(id < jobId, "Invalid job ID");
+        Job memory contractInfo = jobs[id];
+        require(contractInfo.status < 4, "Contract is canceled");
+
+        return contractInfo;
+    }
+
+    ///Hàm lấy tất cả các hợp đồng của job theo job id
+    function getAllContractsByJobId(uint256 jobIdInput)
+        external
+        view
+        returns (ContractInfo[] memory)
+    {
+        uint256 count = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].jobIdcurent == jobIdInput && jobs[i].status < 4) {
+                count++;
+            }
+        }
+
+        ContractInfo[] memory contracts = new ContractInfo[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].jobIdcurent == jobIdInput && jobs[i].status < 4) {
+                contracts[index] = ContractInfo({
+                    id: i,
+                    title: jobs[i].title,
+                    status: jobs[i].status
+                });
+                index++;
+            }
+        }
+        return contracts;
+    }
+
     function cancelContract(uint256 id, string memory reason) external {
         require(
             msg.sender == jobs[id].client || msg.sender == jobs[id].freelancer,
@@ -238,33 +270,58 @@ contract SmartContract {
         jobs[id].status = 2;
     }
 
-    function getContractsByAddress(address userAddress)
+    function getContractsByClient(address clientAddress)
         external
         view
-        returns (uint256[] memory)
+        returns (ContractInfo[] memory)
     {
         uint256 count = 0;
         for (uint256 i = 0; i < jobId; i++) {
-            if (
-                jobs[i].client == userAddress ||
-                jobs[i].freelancer == userAddress
-            ) {
+            if (jobs[i].client == clientAddress) {
                 count++;
             }
         }
 
-        uint256[] memory userContracts = new uint256[](count);
+        ContractInfo[] memory clientContracts = new ContractInfo[](count);
         uint256 index = 0;
         for (uint256 i = 0; i < jobId; i++) {
-            if (
-                jobs[i].client == userAddress ||
-                jobs[i].freelancer == userAddress
-            ) {
-                userContracts[index] = i;
+            if (jobs[i].client == clientAddress) {
+                clientContracts[index] = ContractInfo({
+                    id: i,
+                    title: jobs[i].title,
+                    status: jobs[i].status
+                });
                 index++;
             }
         }
-        return userContracts;
+        return clientContracts;
+    }
+
+    function getContractsByFreelancer(address freelancerAddress)
+        external
+        view
+        returns (ContractInfo[] memory)
+    {
+        uint256 count = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].freelancer == freelancerAddress) {
+                count++;
+            }
+        }
+
+        ContractInfo[] memory freelancerContracts = new ContractInfo[](count);
+        uint256 index = 0;
+        for (uint256 i = 0; i < jobId; i++) {
+            if (jobs[i].freelancer == freelancerAddress) {
+                freelancerContracts[index] = ContractInfo({
+                    id: i,
+                    title: jobs[i].title,
+                    status: jobs[i].status
+                });
+                index++;
+            }
+        }
+        return freelancerContracts;
     }
 
     function getContractsByClientId(uint256 clientId)
@@ -306,52 +363,6 @@ contract SmartContract {
         uint256 index = 0;
         for (uint256 i = 0; i < jobId; i++) {
             if (jobs[i].freelancerId == freelancerId) {
-                freelancerContracts[index] = i;
-                index++;
-            }
-        }
-        return freelancerContracts;
-    }
-
-    function getContractsByClientAddress(address clientAddress)
-        external
-        view
-        returns (uint256[] memory)
-    {
-        uint256 count = 0;
-        for (uint256 i = 0; i < jobId; i++) {
-            if (jobs[i].client == clientAddress) {
-                count++;
-            }
-        }
-
-        uint256[] memory clientContracts = new uint256[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < jobId; i++) {
-            if (jobs[i].client == clientAddress) {
-                clientContracts[index] = i;
-                index++;
-            }
-        }
-        return clientContracts;
-    }
-
-    function getContractsByFreelancerAddress(address freelancerAddress)
-        external
-        view
-        returns (uint256[] memory)
-    {
-        uint256 count = 0;
-        for (uint256 i = 0; i < jobId; i++) {
-            if (jobs[i].freelancer == freelancerAddress) {
-                count++;
-            }
-        }
-
-        uint256[] memory freelancerContracts = new uint256[](count);
-        uint256 index = 0;
-        for (uint256 i = 0; i < jobId; i++) {
-            if (jobs[i].freelancer == freelancerAddress) {
                 freelancerContracts[index] = i;
                 index++;
             }
