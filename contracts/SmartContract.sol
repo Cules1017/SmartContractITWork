@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 struct ContractInfo {
     uint256 id;
+    uint256 jobIdcurent;
     string title;
     uint8 status;
 }
@@ -164,6 +165,11 @@ contract SmartContract {
         payable(jobs[id].freelancer).transfer(jobs[id].bids);
     }
 
+    function rejectCompletion(uint256 id) external onlyClient(id) {
+        require(jobs[id].status == 3, "Freelancer is not report completion yet");
+        jobs[id].status = 2;
+    }
+
     function getJobInfoByCurrentJobId(uint256 currentJobId)
         external
         view
@@ -176,7 +182,9 @@ contract SmartContract {
             uint256,
             uint8,
             address,
-            address
+            address,
+            uint256,
+            uint256
         )
     {
         for (uint256 i = 0; i < jobId; i++) {
@@ -190,7 +198,9 @@ contract SmartContract {
                     jobs[i].bids,
                     jobs[i].status,
                     jobs[i].client,
-                    jobs[i].freelancer
+                    jobs[i].freelancer,
+                    jobs[i].freelancerId,
+                    jobs[i].clientId
                 );
             }
         }
@@ -213,7 +223,7 @@ contract SmartContract {
     {
         uint256 count = 0;
         for (uint256 i = 0; i < jobId; i++) {
-            if (jobs[i].jobIdcurent == jobIdInput && jobs[i].status < 4) {
+            if (jobs[i].jobIdcurent == jobIdInput) {
                 count++;
             }
         }
@@ -221,9 +231,10 @@ contract SmartContract {
         ContractInfo[] memory contracts = new ContractInfo[](count);
         uint256 index = 0;
         for (uint256 i = 0; i < jobId; i++) {
-            if (jobs[i].jobIdcurent == jobIdInput && jobs[i].status < 4) {
+            if (jobs[i].jobIdcurent == jobIdInput) {
                 contracts[index] = ContractInfo({
                     id: i,
+                    jobIdcurent:jobs[i].jobIdcurent,
                     title: jobs[i].title,
                     status: jobs[i].status
                 });
@@ -288,6 +299,7 @@ contract SmartContract {
             if (jobs[i].client == clientAddress) {
                 clientContracts[index] = ContractInfo({
                     id: i,
+                    jobIdcurent:jobs[i].jobIdcurent,
                     title: jobs[i].title,
                     status: jobs[i].status
                 });
@@ -315,6 +327,7 @@ contract SmartContract {
             if (jobs[i].freelancer == freelancerAddress) {
                 freelancerContracts[index] = ContractInfo({
                     id: i,
+                    jobIdcurent:jobs[i].jobIdcurent,
                     title: jobs[i].title,
                     status: jobs[i].status
                 });
@@ -327,7 +340,7 @@ contract SmartContract {
     function getContractsByClientId(uint256 clientId)
         external
         view
-        returns (uint256[] memory)
+        returns (ContractInfo[] memory)
     {
         uint256 count = 0;
         for (uint256 i = 0; i < jobId; i++) {
@@ -336,11 +349,16 @@ contract SmartContract {
             }
         }
 
-        uint256[] memory clientContracts = new uint256[](count);
+        ContractInfo[] memory clientContracts = new ContractInfo[](count);
         uint256 index = 0;
         for (uint256 i = 0; i < jobId; i++) {
             if (jobs[i].clientId == clientId) {
-                clientContracts[index] = i;
+                clientContracts[index] = ContractInfo({
+                    id: i,
+                    jobIdcurent:jobs[i].jobIdcurent,
+                    title: jobs[i].title,
+                    status: jobs[i].status
+                });
                 index++;
             }
         }
@@ -350,7 +368,7 @@ contract SmartContract {
     function getContractsByFreelancerId(uint256 freelancerId)
         external
         view
-        returns (uint256[] memory)
+        returns (ContractInfo[] memory)
     {
         uint256 count = 0;
         for (uint256 i = 0; i < jobId; i++) {
@@ -359,15 +377,30 @@ contract SmartContract {
             }
         }
 
-        uint256[] memory freelancerContracts = new uint256[](count);
+       ContractInfo[] memory freelancerContracts = new ContractInfo[](count);
         uint256 index = 0;
         for (uint256 i = 0; i < jobId; i++) {
             if (jobs[i].freelancerId == freelancerId) {
-                freelancerContracts[index] = i;
+                freelancerContracts[index] = ContractInfo({
+                    id: i,
+                    jobIdcurent:jobs[i].jobIdcurent,
+                    title: jobs[i].title,
+                    status: jobs[i].status
+                });
                 index++;
             }
         }
         return freelancerContracts;
+    }
+
+    function getContractDetailByIndex(uint256 index)
+        external
+        view
+        returns (Job memory)
+    {
+        require(index < jobId, "Invalid index");
+        Job memory contractInfo = jobs[index];
+        return contractInfo;
     }
 
     event BalanceBefore(uint256 balance);
