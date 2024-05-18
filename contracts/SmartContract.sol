@@ -6,6 +6,8 @@ struct ContractInfo {
     uint256 jobIdcurent;
     string title;
     uint8 status;
+    uint256 clientId;
+    uint256 freelancerId;
 }
 
 contract SmartContract {
@@ -64,6 +66,17 @@ contract SmartContract {
 
     constructor() {}
 
+     // Events
+    event JobCreated(uint256 indexed jobId);
+    event JobAccepted(uint256 indexed jobId);
+    event JobCompleted(uint256 indexed jobId);
+    event JobApproved(uint256 indexed jobId);
+    event FundsDeposited(uint256 amount);
+    event FundsCancelForClient(uint256 amount);
+    event FundsCancelForFreelancer(uint256 amount);
+    event FundsCompleted(uint256 amount);
+    event ContractCanceled(uint256 indexed jobId);
+
     modifier onlyClient(uint256 id) {
         // validate chỉ có client mới thực hiện dc thao tác này
         require(
@@ -94,7 +107,6 @@ contract SmartContract {
         _;
     }
 
-    event JobCreated(uint256 indexed jobId); // Sự kiện trả về job ID
 
     function createContract(
         string memory _title,
@@ -107,7 +119,6 @@ contract SmartContract {
     ) external payable returns (uint256) {
         require(msg.value == _bids, "Insufficient amount sent");
         //số  tiền gởi phải bằng với số tiền thầu dự án trong hợp đồng
-        emit Ok();
         jobId++;
         jobs[jobId - 1] = Job({
             title: _title,
@@ -125,8 +136,7 @@ contract SmartContract {
         });
         // Phát sinh sự kiện trả về job ID
         emit JobCreated(jobId - 1);
-        // Nạp số tiền vào ví trung gian
-        //escrow.transfer(_bids);
+        emit FundsDeposited(msg.value);
 
         return jobId - 1; //return về id hợp đồng
     }
@@ -144,6 +154,7 @@ contract SmartContract {
         jobs[id].status = 1; // gán giá trị status=1 client chấp thuận
         jobs[id].signatureF = signature;
         jobs[id].freelancer = msg.sender; // Gán địa chỉ của freelancer
+        emit JobAccepted(jobs[id].jobIdcurent);
     }
 
     ///kiểm tra giúp tôi hàm bên dưới
@@ -163,10 +174,12 @@ contract SmartContract {
         // (bool success,) = jobs[id].freelancer.call{value: jobs[id].bids}("");
         // require(success, "Failed to send Ether");
         payable(jobs[id].freelancer).transfer(jobs[id].bids);
+        emit JobApproved(jobs[id].jobIdcurent);
+        emit FundsCompleted(jobs[id].jobIdcurent);
     }
 
     function rejectCompletion(uint256 id) external onlyClient(id) {
-        require(jobs[id].status == 3, "Freelancer is not report completion yet");
+        require(jobs[id].status == 2, "Freelancer is not report completion yet");
         jobs[id].status = 2;
     }
 
@@ -236,7 +249,9 @@ contract SmartContract {
                     id: i,
                     jobIdcurent:jobs[i].jobIdcurent,
                     title: jobs[i].title,
-                    status: jobs[i].status
+                    status: jobs[i].status,
+                    freelancerId: jobs[i].freelancerId,
+                    clientId: jobs[i].clientId
                 });
                 index++;
             }
@@ -250,7 +265,7 @@ contract SmartContract {
             "Only client or freelancer can cancel this contract"
         );
 
-        require(jobs[id].status < 4, "Contract cannot be canceled");
+        require(jobs[id].status ==0, "Contract cannot be canceled");
 
         if (msg.sender == jobs[id].client) {
             // Nếu client hủy hợp đồng
@@ -262,6 +277,8 @@ contract SmartContract {
             jobs[id].status = 5; // Cập nhật trạng thái hủy bởi client
             jobs[id].cancelReason = reason; // Lưu lí do hủy
             payable(jobs[id].freelancer).transfer(jobs[id].bids); // Chuyển tiền về cho freelancer
+            emit FundsCancelForFreelancer(jobs[id].bids);
+            emit ContractCanceled(jobs[id].jobIdcurent);
         } else {
             // Nếu freelancer hủy hợp đồng
             require(
@@ -272,6 +289,8 @@ contract SmartContract {
             jobs[id].status = 4; // Cập nhật trạng thái hủy bởi freelancer
             jobs[id].cancelReason = reason; // Lưu lí do hủy
             payable(jobs[id].client).transfer(jobs[id].bids); // Chuyển tiền về cho client
+            emit FundsCancelForClient(jobs[id].bids);
+            emit ContractCanceled(jobs[id].jobIdcurent);
         }
     }
 
@@ -279,6 +298,7 @@ contract SmartContract {
     function reportCompletion(uint256 id) external onlyFreelancer(id) {
         require(jobs[id].status == 1, "Contract is not accepted yet");
         jobs[id].status = 2;
+        emit JobCompleted(jobs[id].jobIdcurent);
     }
 
     function getContractsByClient(address clientAddress)
@@ -301,7 +321,9 @@ contract SmartContract {
                     id: i,
                     jobIdcurent:jobs[i].jobIdcurent,
                     title: jobs[i].title,
-                    status: jobs[i].status
+                    status: jobs[i].status,
+                    freelancerId: jobs[i].freelancerId,
+                    clientId: jobs[i].clientId
                 });
                 index++;
             }
@@ -329,7 +351,9 @@ contract SmartContract {
                     id: i,
                     jobIdcurent:jobs[i].jobIdcurent,
                     title: jobs[i].title,
-                    status: jobs[i].status
+                    status: jobs[i].status,
+                    freelancerId: jobs[i].freelancerId,
+                    clientId: jobs[i].clientId
                 });
                 index++;
             }
@@ -357,7 +381,9 @@ contract SmartContract {
                     id: i,
                     jobIdcurent:jobs[i].jobIdcurent,
                     title: jobs[i].title,
-                    status: jobs[i].status
+                    status: jobs[i].status,
+                    freelancerId: jobs[i].freelancerId,
+                    clientId: jobs[i].clientId
                 });
                 index++;
             }
@@ -385,7 +411,9 @@ contract SmartContract {
                     id: i,
                     jobIdcurent:jobs[i].jobIdcurent,
                     title: jobs[i].title,
-                    status: jobs[i].status
+                    status: jobs[i].status,
+                    freelancerId: jobs[i].freelancerId,
+                    clientId: jobs[i].clientId
                 });
                 index++;
             }
@@ -403,6 +431,4 @@ contract SmartContract {
         return contractInfo;
     }
 
-    event BalanceBefore(uint256 balance);
-    event Ok();
 }
