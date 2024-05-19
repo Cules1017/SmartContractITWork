@@ -265,7 +265,7 @@ contract SmartContract {
             "Only client or freelancer can cancel this contract"
         );
 
-        require(jobs[id].status ==0, "Contract cannot be canceled");
+        //require(jobs[id].status ==0, "Contract cannot be canceled");
 
         if (msg.sender == jobs[id].client) {
             // Nếu client hủy hợp đồng
