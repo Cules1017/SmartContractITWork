@@ -202,14 +202,7 @@ contract SmartContract {
         // Đánh dấu policy đã được chấp nhận
         latestHistory.accepted = 1;
 
-        // Tạo một bản ghi mới cho lịch sử và thêm vào mảng history
-        jobs[id].history.push(
-            historyEditPolicy({
-                typeUser: typeUser,
-                description: latestHistory.description, // Sử dụng mô tả từ lịch sử trước đó
-                accepted: 0 // Chưa được chấp nhận
-            })
-        );
+        
 
         // Cập nhật mô tả của công việc với mô tả mới nhất từ lịch sử
         jobs[id].description = latestHistory.description;
