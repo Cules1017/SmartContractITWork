@@ -11,6 +11,11 @@ struct ContractInfo {
 }
 
 contract SmartContract {
+    struct historyEditPolicy {
+        uint8 typeUser; //loại user 0:client 1:freelancer
+        string description;
+        uint8 accepted; //0:chưa accept 1:đã accept
+    }
     struct Job {
         string title;
         string description;
@@ -27,6 +32,7 @@ contract SmartContract {
         address client;
         address freelancer;
         string cancelReason; // lí do hủy
+        historyEditPolicy[] history; //mảng lưu trữ lịch sử chỉnh sửa
     }
     mapping(uint256 => Job) public jobs;
     uint256 public jobId;
@@ -72,6 +78,7 @@ contract SmartContract {
     event JobCompleted(uint256 indexed jobId);
     event JobApproved(uint256 indexed jobId);
     event FundsDeposited(uint256 amount);
+    event FundsDepositedofFreelancer(uint256 amount);
     event FundsCancelForClient(uint256 amount);
     event FundsCancelForFreelancer(uint256 amount);
     event FundsCompleted(uint256 amount);
@@ -117,22 +124,31 @@ contract SmartContract {
         uint256 _clientId
     ) external payable returns (uint256) {
         require(msg.value == _bids, "Insufficient amount sent");
-        //số  tiền gởi phải bằng với số tiền thầu dự án trong hợp đồng
-        jobId++;
-        jobs[jobId - 1] = Job({
-            title: _title,
+        // Initialize the history array with one entry
+        // Tạo một mảng history trống trong storage
+        // Khởi tạo một mảng history trống
+        // Thêm hợp đồng mới vào danh sách công việc
+        Job storage newJob = jobs[jobId];
+        newJob.title = _title;
+        newJob.description = _description;
+        newJob.bids = _bids;
+        newJob.status = 0;
+        newJob.signatureC = _signature;
+        newJob.signatureF = "";
+        newJob.jobIdcurent = _jobId;
+        newJob.clientId = _clientId;
+        newJob.freelancerId = _freelancerId;
+        newJob.client = msg.sender;
+        newJob.freelancer = address(0);
+        newJob.cancelReason = "";
+
+        // Thêm mục nhập vào lịch sử trực tiếp
+        newJob.history.push(historyEditPolicy({
+            typeUser: 0,
             description: _description,
-            bids: _bids,
-            status: 0,
-            signatureC: _signature,
-            signatureF: "",
-            jobIdcurent: _jobId,
-            clientId: _clientId,
-            freelancerId: _freelancerId,
-            client: msg.sender,
-            freelancer: address(0),
-            cancelReason: ""
-        });
+            accepted: 1
+        }));
+        jobId++;
         // Phát sinh sự kiện trả về job ID
         emit JobCreated(jobId - 1);
         emit FundsDeposited(msg.value);
@@ -140,18 +156,82 @@ contract SmartContract {
         return jobId - 1; //return về id hợp đồng
     }
 
+
+
+    function updateContentContract(uint256 id,string memory _description)external{
+        require(
+            msg.sender == jobs[id].client || msg.sender == jobs[id].freelancer,
+            "Only client or freelancer can cancel this contract"
+        );//  
+        uint8 typeUser = msg.sender == jobs[id].client ? 0 : 1;
+        jobs[id].history.push(historyEditPolicy({
+            typeUser: typeUser,
+            description: _description,
+            accepted: 0
+        }));
+    }
+
+    function acceptContentContract(uint256 id) external {
+        require(jobs[id].status < 4, "Contract is canceled");
+        require(jobs[id].status >= 1, "Contract must be accepted first");
+        require(
+            msg.sender == jobs[id].client || msg.sender == jobs[id].freelancer,
+            "Only client or freelancer can accept policy"
+        );
+
+        uint8 typeUser = msg.sender == jobs[id].client ? 0 : 1;
+        require(
+            jobs[id].history.length > 0,
+            "No history found for this contract"
+        );
+
+        // Truy xuất phần tử cuối cùng của mảng history
+        historyEditPolicy storage latestHistory = jobs[id].history[
+            jobs[id].history.length - 1
+        ];
+
+        // Kiểm tra xem policy đã được chấp nhận chưa
+        require(latestHistory.accepted == 0, "Policy already accepted");
+
+        // Kiểm tra xem người dùng hiện tại có phải là người tạo policy không
+        require(
+            latestHistory.typeUser != typeUser,
+            "Cannot accept own policy update"
+        );
+
+        // Đánh dấu policy đã được chấp nhận
+        latestHistory.accepted = 1;
+
+        // Tạo một bản ghi mới cho lịch sử và thêm vào mảng history
+        jobs[id].history.push(
+            historyEditPolicy({
+                typeUser: typeUser,
+                description: latestHistory.description, // Sử dụng mô tả từ lịch sử trước đó
+                accepted: 0 // Chưa được chấp nhận
+            })
+        );
+
+        // Cập nhật mô tả của công việc với mô tả mới nhất từ lịch sử
+        jobs[id].description = latestHistory.description;
+    }
+
     //check điều kiện[contract kh bị hủy, contract chưa đc accept
-    function acceptContract(
-        uint256 id,
-        string memory signature
-    ) external contractNotCanceled(id) contractNotAccepted(id) {
+    function acceptContract(uint256 id, string memory signature)
+        external
+        payable
+        contractNotCanceled(id)
+        contractNotAccepted(id)
+    {
         require(
             msg.sender != jobs[id].client,
             "Client can't accept this contract"
         );
+        require(msg.value == jobs[id].bids / 2, "Insufficient amount sent");
         jobs[id].status = 1; // gán giá trị status=1 client chấp thuận
         jobs[id].signatureF = signature;
         jobs[id].freelancer = msg.sender; // Gán địa chỉ của freelancer
+        // khi kí freelancer phải cọc 50% bids
+        emit FundsDepositedofFreelancer(msg.value);
         emit JobAccepted(jobs[id].jobIdcurent);
     }
 
@@ -171,7 +251,9 @@ contract SmartContract {
         // send all Ether to owner
         // (bool success,) = jobs[id].freelancer.call{value: jobs[id].bids}("");
         // require(success, "Failed to send Ether");
-        payable(jobs[id].freelancer).transfer(jobs[id].bids);
+        payable(jobs[id].freelancer).transfer(
+            jobs[id].bids + jobs[id].bids / 2
+        );
         emit JobApproved(jobs[id].jobIdcurent);
         emit FundsCompleted(jobs[id].jobIdcurent);
     }
@@ -181,12 +263,10 @@ contract SmartContract {
             jobs[id].status == 2,
             "Freelancer is not report completion yet"
         );
-        jobs[id].status = 2;
+        jobs[id].status = 1;
     }
 
-    function getJobInfoByCurrentJobId(
-        uint256 currentJobId
-    )
+    function getJobInfoByCurrentJobId(uint256 currentJobId)
         external
         view
         returns (
@@ -200,7 +280,8 @@ contract SmartContract {
             address,
             address,
             uint256,
-            uint256
+            uint256,
+            historyEditPolicy[] memory history
         )
     {
         for (uint256 i = 0; i < jobId; i++) {
@@ -216,7 +297,8 @@ contract SmartContract {
                     jobs[i].client,
                     jobs[i].freelancer,
                     jobs[i].freelancerId,
-                    jobs[i].clientId
+                    jobs[i].clientId,
+                    jobs[i].history
                 );
             }
         }
@@ -232,9 +314,11 @@ contract SmartContract {
     }
 
     ///Hàm lấy tất cả các hợp đồng của job theo job id
-    function getAllContractsByJobId(
-        uint256 jobIdInput
-    ) external view returns (ContractInfo[] memory) {
+    function getAllContractsByJobId(uint256 jobIdInput)
+        external
+        view
+        returns (ContractInfo[] memory)
+    {
         uint256 count = 0;
         for (uint256 i = 0; i < jobId; i++) {
             if (jobs[i].jobIdcurent == jobIdInput) {
@@ -277,7 +361,9 @@ contract SmartContract {
 
             jobs[id].status = 5; // Cập nhật trạng thái hủy bởi client
             jobs[id].cancelReason = reason; // Lưu lí do hủy
-            payable(jobs[id].freelancer).transfer(jobs[id].bids); // Chuyển tiền về cho freelancer
+            payable(jobs[id].freelancer).transfer(
+                jobs[id].bids + jobs[id].bids / 2
+            ); // Chuyển tiền về cho freelancer
             emit FundsCancelForFreelancer(jobs[id].bids);
             emit ContractCanceled(jobs[id].jobIdcurent);
         } else {
@@ -289,7 +375,9 @@ contract SmartContract {
 
             jobs[id].status = 4; // Cập nhật trạng thái hủy bởi freelancer
             jobs[id].cancelReason = reason; // Lưu lí do hủy
-            payable(jobs[id].client).transfer(jobs[id].bids); // Chuyển tiền về cho client
+            payable(jobs[id].client).transfer(
+                jobs[id].bids + jobs[id].bids / 2
+            ); // Chuyển tiền về cho client
             emit FundsCancelForClient(jobs[id].bids);
             emit ContractCanceled(jobs[id].jobIdcurent);
         }
@@ -310,9 +398,11 @@ contract SmartContract {
         emit JobCompleted(jobs[id].jobIdcurent);
     }
 
-    function getContractsByClient(
-        address clientAddress
-    ) external view returns (ContractInfo[] memory) {
+    function getContractsByClient(address clientAddress)
+        external
+        view
+        returns (ContractInfo[] memory)
+    {
         uint256 count = 0;
         for (uint256 i = 0; i < jobId; i++) {
             if (jobs[i].client == clientAddress) {
@@ -338,9 +428,11 @@ contract SmartContract {
         return clientContracts;
     }
 
-    function getContractsByFreelancer(
-        address freelancerAddress
-    ) external view returns (ContractInfo[] memory) {
+    function getContractsByFreelancer(address freelancerAddress)
+        external
+        view
+        returns (ContractInfo[] memory)
+    {
         uint256 count = 0;
         for (uint256 i = 0; i < jobId; i++) {
             if (jobs[i].freelancer == freelancerAddress) {
@@ -366,9 +458,11 @@ contract SmartContract {
         return freelancerContracts;
     }
 
-    function getContractsByClientId(
-        uint256 clientId
-    ) external view returns (ContractInfo[] memory) {
+    function getContractsByClientId(uint256 clientId)
+        external
+        view
+        returns (ContractInfo[] memory)
+    {
         uint256 count = 0;
         for (uint256 i = 0; i < jobId; i++) {
             if (jobs[i].clientId == clientId) {
@@ -394,9 +488,11 @@ contract SmartContract {
         return clientContracts;
     }
 
-    function getContractsByFreelancerId(
-        uint256 freelancerId
-    ) external view returns (ContractInfo[] memory) {
+    function getContractsByFreelancerId(uint256 freelancerId)
+        external
+        view
+        returns (ContractInfo[] memory)
+    {
         uint256 count = 0;
         for (uint256 i = 0; i < jobId; i++) {
             if (jobs[i].freelancerId == freelancerId) {
@@ -422,9 +518,11 @@ contract SmartContract {
         return freelancerContracts;
     }
 
-    function getContractDetailByIndex(
-        uint256 index
-    ) external view returns (Job memory) {
+    function getContractDetailByIndex(uint256 index)
+        external
+        view
+        returns (Job memory)
+    {
         require(index < jobId, "Invalid index");
         Job memory contractInfo = jobs[index];
         return contractInfo;
